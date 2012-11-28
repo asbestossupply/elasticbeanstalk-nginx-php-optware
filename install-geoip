@@ -1,0 +1,118 @@
+#!/bin/bash
+# AWS Elastic Beanstalk Nginx/PHP-FPM Configuration Optware
+# Copyright 2012 Noah Blumenthal
+# 
+# MIT LICENSE
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+# 
+
+# Global variables
+FILE=${0##*/}
+OPTIONS="help,licensekey:,productids:,userid:,version"
+PATH=$(readlink -f $0):/bin:/usr/bin
+VERSION=1.0.0
+
+# Parse options
+ARGS=$(/usr/bin/getopt -o hv -l $OPTIONS -n $FILE -- "$@")
+eval set -- "$ARGS"
+
+# Loop options and set flags
+while true; do
+    case $1 in
+        --licensekey)
+                      if [ -n "$2" ]; then
+                        LICENSEKEY=$2
+                      fi;;
+        --productids)
+                      if [ -n "$2" ]; then
+                        PRODUCTIDS=$2
+                      fi;;
+        --userid)
+                      if [ -n "$2" ]; then
+                        USERID=$2
+                      fi;;
+        -h|--help)    echo "Usage: $FILE [options] 
+       $FILE --version
+
+Installs the PHP GeoIP extension
+        
+
+Options (all are required):
+  -h|--help     show this output
+  --licensekey
+  --productids
+  --userid 
+  -v|--version show version information
+"
+                      exit 0;;
+        -v|--version) echo "$VERSION"
+                      exit 0;;
+        *)            break;;
+    esac 
+    shift 2
+done
+
+# Output header
+echo ''
+echo '# AWS Elastic Beanstalk Nginx/PHP-FPM Optware'
+echo '# Copyright 2012 Noah Blumenthal'
+echo ''
+if [ ! $LICENSEKEY ]; then
+    echo '--licensekey is required'
+    exit -1;
+fi
+if [ ! $PRODUCTIDS ]; then
+    echo '--productids is required'
+    exit -1;
+fi
+if [ ! $USERID ]; then
+    echo '--userid is required'
+    exit -1;
+fi
+
+echo ''
+echo 'Installing PHP GeoIP extension'
+echo ''
+/bin/sleep 5
+
+/usr/bin/git clone git@github.com:statichippo/elasticbeanstalk-nginx-php-optware.git /tmp/optware-geoip
+
+/usr/bin/yum -q -y install php54-devel geoip-devel
+/usr/bin/git clone git://github.com/Zakay/geoip.git /tmp/geoip
+cd /tmp/geoip
+/usr/bin/phpize
+./configure --with-php-config=/usr/bin/php-config
+make
+make install
+
+/bin/cp -rf /tmp/build/geoip/etc /
+
+echo "# GeoIP.conf file - used by geoipupdate program
+# to update databases from http://www.maxmind.com
+UserId $USERID
+LicenseKey $LICENSEKEY
+ProductIds $PRODUCTIDS" > /usr/local/etc/GeoIP.conf
+
+echo "#!/bin/sh
+/usr/local/bin/geoipupdate" > /etc/cron.weekly/maxmind
+
+/bin/chmod 755 /etc/cron.daily/maxmind
+
+/bin/cp -rf /tmp/optware-geoip/etc /
